@@ -23,25 +23,60 @@ The data visualization app is implemeted in Jupyter Notebook and run the follwoi
     
 The ETL is done via PySpark over to an EMR cluster.
 
+
 ## Schema design
 
-####### TODO
+![image info](./imgs/star-schema-tmp.png)
 
 ### Main design
 
-The data lake `sparkifydl` holds information about songs played and relative metadata. The star schema is made of:
-    - *fact table*: `songplays`
-    - *dimension tables*: `songs`, `users`, `time` and `artists`
- 
-Tables are stored in parquet files saved onto a S3 bucket specified in the `etl.py` script.
-`time` and `songplays` are parquet files partitioned by *year* and month*, while `songs` is a parquet file paritioned by *year* and *artist_id*.
+The database `lotterydb` holds information about bookings and user events (registrations and logins). The star schema is made of 3 fact tables and 6 dimension tables.
+    - *fact tables*: `bookings`, `logins` and `registrations`
+    - *dimension tables*: `customers`, `websites`, `time`, `products`, `tickets` and `addresses`
 
-Two methods take care of ingesting the raw files in JSON format:
-    - For the song files, it is possible to easily infer the schema.
-    - The log files are ingested by manually defying the schema.
- 
-The data manipulation is performed via PySpark, an interface for Apache Spark in Python.
 
+### Data assumptions
+
+Some assumptions have been taken into account and they are investigated on the Jupyter notebook ( `notebooks/EDA.ipynb` ).
+
+For the following staging tables, these columns have been considered important (constrain `NOT NULL`) when cleaned up:
+  - customer_logins: entire column set
+  - customer_registration: timestap, site, customeremail, dateofbirth, familyname, givennames, customernumber
+  - games_purchase: timestap, siteid, customernumber, gamename, priceineur, feeineur, ticketexternalid
+  - lottery_purchase: timestamp, site, customernumber, amountineur,feeamountineur, game, orderidentifier, tickertid
+
+Inside customer_registration table, columns *timestamp* and *registrationdate* might be rendundant.
+Inside lottery_purchase table, columns *amountincents* and *paymentamountincents* might be rendundant.
+Pricing values are normalized to EUR across the tables.
+
+The QA checks are based on the following assumptions:
+
+- customer_logins:
+    - all columns are necessary
+    - no numbers on the website name
+    - no letters on the customer number
+    
+- customer_registrations:
+    - necessary columns are: timestamp, site, customeremail, familyname, givennames, customernumber, dateofbirth
+    - no duplicates allowed on: customernumber and "customernumber + email"
+    - email must be valid 
+    
+- instant games puchases:
+    - necessary columns are: timestamp, sitetid, customernumber, gamename, ticketexternalid
+    - no negative values allowed on: priceineur, feeineur, winningsineur
+    
+- lottery ticket purchases:
+    - necessary columns are: timestampunix, site, customernumber, game, orderidentifie, ticketid
+    - no negative values allowed on: amountincents, feeamountincents, paymentamountincents
+
+Running the `EDA.ipynb` it is possible to see that there are some inconsistency in the raw data. In this project, records that do not conform with the QA standards will
+be simply ignored. In other scenarios, the problematic records could be stored in `quarantine` tables used for manual inspections. This would provide the following advantages:
+
+    - records are not simply discarded and everything is kept for possible future updates and corrections
+    - records can be used for a cross-departament investigation to spot out problems that have passed unobserved (ex: implementation of some access points is faulty, some useful data is lost while it is expected to be captured, etc)
+    - records won't compromise the ETL workflow when an error is discovered. Records fitted for the OLAP section of the datawarehouse can still be correctly used.
+
+   
 ## How to run the project
 
 1. Fill out the missing information from the `dl.cfg` file.
