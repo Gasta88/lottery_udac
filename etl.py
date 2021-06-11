@@ -1,5 +1,6 @@
 import configparser
 from datetime import datetime
+import time
 import os
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf, col, monotonically_increasing_id, lit
@@ -26,7 +27,7 @@ def create_spark_session():
     return spark
 
 
-def process_data(spark, input_data):
+def process_inputdata(spark, input_data):
     """Process data files from S3 buckets and return dataframes.
 
     Parameters
@@ -54,17 +55,32 @@ def process_data(spark, input_data):
     lottery_df = spark.read.csv(lottery_data, header=True, sep=';')
     games_df = spark.read.csv(instant_games_data, header=True, sep=';')
     
+    # udf definitions
+    get_timestampunix = udf(lambda x:
+                            time.mktime(
+                                datetime.strptime(x, '%Y-%m-%d %H:%M:%S:%f')\
+                                    .timetuple()), IntegerType())
+    get_timestamp = udf(lambda x: int(int(x)/1000), IntegerType())
+    get_datetime = udf(lambda x: datetime.fromtimestamp(x), TimestampType())
+    
+    # preprocess log_df to change column name to timestamp and add
+    # unix timestamp
+    log_df = log_df.withColumnRenamed("timestamp", "datetime")
+    log_df = log_df.withColum("timestamp",
+                              get_timestampunix(log_df.datetime))
+    
+    # preprocess reg_df to change column name to timestamp and add
+    # unix timestamp
+    reg_df = reg_df.withColumnRenamed("timestamp", "datetime")
+    reg_df = reg_df.withColum("timestamp",
+                              get_timestampunix(reg_df.datetime))
+    
     # preprocess lottery dataframe for timestamp, payment units and
     # missing columns
-    get_timestamp = udf(lambda x: int(int(x)/1000), IntegerType())
     lottery_df = lottery_df.withColumn("timestamp",
                                        get_timestamp(lottery_df.timestampunix))
-    
-    # create datetime column from original timestamp column
-    get_datetime = udf(lambda x: datetime.fromtimestamp(x), TimestampType())
     lottery_df = lottery_df.withColumn("datetime",
                                        get_datetime(lottery_df.timestamp))
-    
     lottery_df = lottery_df.withColumn("priceineur",
                                        col("amountincents") / 100)
     lottery_df = lottery_df.withColumn("feeineur",
@@ -75,6 +91,8 @@ def process_data(spark, input_data):
     # preprocess instant games dataframe for missing columns
     games_df = games_df.withColumn("betindex", lit(None).cast(StringType()))
     games_df = games_df.withColumn("discount", lit(None).cast(StringType()))
+    games_df = games_df.withColum("timestamp",
+                                  get_timestampunix(games_df.datetime))
     
     
     return (log_df, reg_df, lottery_df, games_df)
@@ -200,12 +218,86 @@ def create_ticket_table(lottery_df, games_df, debug=False):
         return ticket_table
     return                         
                              
-                             
-                             
-                             
-    
-                
-                    
+def create_product_table(lottery_df, games_df, debug=False):                      
+    """Load records to product dimension table on Redshift.
+
+    Parameters
+    ----------
+    lottery_df: Spark.dataframe
+        Dataframe with lottery tickets data.
+    games_df: Spark.dataframe
+        Dataframe with instant games data.
+    debug: bool
+        Flag whether the execution is for production or testing.
+    """                            
+    prod_table1 = lottery_df.dropDuplicates(["game"])\
+                            .select(col("game").alias("name"))\
+                            .where(col("game").isNotNull())\
+                            .withColumn("type", "lottery_game")
+    prod_table2 = games_df.dropDuplicates(["gamename"])\
+                          .select(col("gamename").alias("name"))\
+                          .where(col("gamename").isNotNull())\
+                          .withColumn("type", "instant_game")
+    product_table =  reduce(lambda x, y: x.union(y), [prod_table1,
+                                                      prod_table2])
+    product_table = product_table.withColumn("id",
+                                             monotonically_increasing_id())
+    #TODO: store on Redshift
+    if debug:
+        return product_table
+    return  
+
+def create_time_table(log_df, reg_df, lottery_df, games_df, debug=False):
+    """Load records to time dimension table on Redshift.
+
+    Parameters
+    ----------
+    log_df: Spark.dataframe
+        Dataframe with customer logins data.
+    reg_df: Spark.dataframe
+        Dataframe with customer registration data.
+    lottery_df: Spark.dataframe
+        Dataframe with lottery tickets data.
+    games_df: Spark.dataframe
+        Dataframe with instant games data.
+    debug: bool
+        Flag whether the execution is for production or testing.
+    """
+    time_log_df = log_df.dropDuplicates(["timestamp"])\
+                           .select(col("timestamp"),
+                                   col("datetime"))\
+                           .where(col("timestamp").isNotNull())
+    time_reg_df = reg_df.dropDuplicates(["timestamp"])\
+                           .select(col("timestamp"),
+                                   col("datetime"))\
+                           .where(col("timestamp").isNotNull())
+    time_lottery_df = lottery_df.dropDuplicates(["timestamp"])\
+                                .select(col("timestamp"),
+                                        col("datetime"))\
+                                .where(col("timestamp").isNotNull())
+    time_games_df = games_df.dropDuplicates(["timestamp"])\
+                               .select(col("timestamp"),
+                                       col("datetime"))\
+                               .where(col("timestamp").isNotNull())
+    time_table = reduce(lambda x, y: x.union(y), [time_log_df,
+                                                  time_reg_df,
+                                                  time_lottery_df,
+                                                  time_games_df])
+    time_table = time_table.dropDuplicates(["timestamp"])\
+                           .withColumn("hour", hour("datetime"))\
+                           .withColumn("day", dayofmonth("datetime"))\
+                           .withColumn("week", weekofyear("datetime"))\
+                           .withColumn("month", month("datetime"))\
+                           .withColumn("year", year("datetime"))\
+                           .withColumn("weekday", date_format('datetime', 'E'))\
+                           .select(col("timestamp"),
+                                   col("hour"), col("day"), col("week"),
+                                   col("month"), col("year"), col("weekday"))
+    #TODO: store on Redshift
+    if debug:
+        return time_table
+    return  
+      
 def process_song_data(spark, input_data, output_data):
     """Process song data files from S3 buckets.
 
