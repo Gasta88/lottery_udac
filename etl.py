@@ -2,11 +2,12 @@ import configparser
 from datetime import datetime
 import os
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import udf, col, monotonically_increasing_id
+from pyspark.sql.functions import udf, col, monotonically_increasing_id, lit
 from pyspark.sql.functions import year, month, dayofmonth, hour, weekofyear, \
     date_format
 from pyspark.sql.types import IntegerType, StringType, TimestampType, \
     StructType, StructField, DoubleType, LongType
+from functools import reduce
 
 
 config = configparser.ConfigParser()
@@ -25,26 +26,69 @@ def create_spark_session():
     return spark
 
 
-def process_customer_data(spark, input_data, debug=False):
-    """Process customer data files from S3 buckets.
+def process_data(spark, input_data):
+    """Process data files from S3 buckets and return dataframes.
 
-    The method store the records onto the Redshift database.
-    
     Parameters
     ----------
     spark: SparkSession obj
         Spark application
     input_data: str
         S3 input bucket address
+
+    Returns
+    -------
+    tuple
+        Tuple of Spark dataframes for all the data loaded.
+    """
+    # data files location
+    cust_logins_data = os.path.join(input_data, 'customerlogins.csv')
+    cust_registration_data = os.path.join(input_data,
+                                          'customerregistration_*.csv')
+    lottery_data = os.path.join(input_data, 'lotterygamespurchases.csv')
+    instant_games_data = os.path.join(input_data, 'instantgamespurchases.csv')
+    
+    # create dataframes to store in memory
+    log_df = spark.read.csv(cust_logins_data, header=True, sep=';')
+    reg_df = spark.read.csv(cust_registration_data, header=True, sep=';')
+    lottery_df = spark.read.csv(lottery_data, header=True, sep=';')
+    games_df = spark.read.csv(instant_games_data, header=True, sep=';')
+    
+    # preprocess lottery dataframe for timestamp, payment units and
+    # missing columns
+    get_timestamp = udf(lambda x: int(int(x)/1000), IntegerType())
+    lottery_df = lottery_df.withColumn("timestamp",
+                                       get_timestamp(lottery_df.timestampunix))
+    
+    # create datetime column from original timestamp column
+    get_datetime = udf(lambda x: datetime.fromtimestamp(x), TimestampType())
+    lottery_df = lottery_df.withColumn("datetime",
+                                       get_datetime(lottery_df.timestamp))
+    
+    lottery_df = lottery_df.withColumn("priceineur",
+                                       col("amountincents") / 100)
+    lottery_df = lottery_df.withColumn("feeineur",
+                                       col("feeamountincents") / 100)
+    lottery_df = lottery_df.withColumn("winningsineur",
+                                       lit(None).cast(StringType()))
+    
+    # preprocess instant games dataframe for missing columns
+    games_df = games_df.withColumn("betindex", lit(None).cast(StringType()))
+    games_df = games_df.withColumn("discount", lit(None).cast(StringType()))
+    
+    
+    return (log_df, reg_df, lottery_df, games_df)
+
+def create_customer_table(reg_df, debug=False):
+    """Load records to customer dimension table on Redshift.
+
+    Parameters
+    ----------
+    reg_df: Spark.dataframe
+        Dataframe with customer registration data.
     debug: bool
         Flag whether the execution is for production or testing.
     """
-    # cust_logins_data = os.path.join(input_data, 'customerlogins.csv')
-    cust_registration_data = os.path.join(input_data,
-                                          'customerregistration_*.csv')
-    # log_df = spark.read.csv(cust_logins_data, header=True, sep=';')
-    reg_df = spark.read.csv(cust_registration_data, header=True, sep=';')
-    
     customer_table = reg_df.dropDuplicates(["customernumber"])\
                            .select(col("customernumber").alias("id"),
                                    col("customeremail").alias("email"),
@@ -64,61 +108,101 @@ def process_customer_data(spark, input_data, debug=False):
                                   col("timestamp").isNotNull() &
                                   col("dateofbirth").isNotNull() &
                                   col("customeremail").rlike('^[a-z0-9]+[\._]?[a-z0-9]+[@]\w+[.]\w{2,3}$'))
+    #TODO: store on Redshift
     
-    # websites_table = log_df.dropDuplicates(["site"])\
-    #                        .select(monotonically_increasing_id().alias("id"),
-    #                                col("site").alias("name"))\
-    #                        .where(col("site").isNotNull())
     if debug:
-        return {'customer_table': (customer_table.count(),
-                                   len(customer_table.columns))}
+        return customer_table
     return
 
-def process_time_data(spark, input_data, debug=False):
-    """Process time data files from S3 buckets.
+def create_website_table(log_df, reg_df, lottery_df, games_df, debug=False):
+    """Load records to website dimension table on Redshift.
 
-    The method store the records onto the Redshift database.
-    
     Parameters
     ----------
-    spark: SparkSession obj
-        Spark application
-    input_data: str
-        S3 input bucket address
+    log_df: Spark.dataframe
+        Dataframe with customer logins data.
+    reg_df: Spark.dataframe
+        Dataframe with customer registration data.
+    lottery_df: Spark.dataframe
+        Dataframe with lottery tickets data.
+    games_df: Spark.dataframe
+        Dataframe with instant games data.
     debug: bool
         Flag whether the execution is for production or testing.
     """
-    cust_logins_data = os.path.join(input_data, 'customerlogins.csv')
-    cust_registration_data = os.path.join(input_data,
-                                          'customerregistration_*.csv')
-    lottery_data = os.path.join(input_data, 'lotterygamespurchases.csv')
-    instant_games_data = os.path.join(input_data, 'instantgamespurchases.csv')
-    
-    log_df = spark.read.csv(cust_logins_data, header=True, sep=';')
-    reg_df = spark.read.csv(cust_registration_data, header=True, sep=';')
-    lottery_df = spark.read.csv(lottery_data, header=True, sep=';')
-    games_df = spark.read.csv(instant_games_data, header=True, sep=';')
-    
-    # create timestamp column from original timestamp column
-    get_timestamp = udf(lambda x: int(int(x)/1000), IntegerType())
-    lottery_df = lottery_df.withColumn("timestamp",
-                                       get_timestamp(lottery_df.timestampunix))
-    
-    # create datetime column from original timestamp column
-    get_datetime = udf(lambda x: datetime.fromtimestamp(x), TimestampType())
-    lottery_df = lottery_df.withColumn("datetime",
-                                       get_datetime(lottery_df.timestamp))
-    
-    # extract columns to create time table
-    time_table = df.withColumn("hour", hour("datetime"))\
-                    .withColumn("day", dayofmonth("datetime"))\
-                    .withColumn("week", weekofyear("datetime"))\
-                    .withColumn("month", month("datetime"))\
-                    .withColumn("year", year("datetime"))\
-                    .withColumn("weekday", date_format('datetime', 'E'))\
-                    .select(col("timestamp").alias("start_time"),
-                            col("hour"), col("day"), col("week"), col("month"),
-                            col("year"), col("weekday"))
+    website_log_df = log_df.dropDuplicates(["site"])\
+                           .select(col("site").alias("name"))\
+                           .where(col("site").isNotNull())
+    website_reg_df = reg_df.dropDuplicates(["site"])\
+                           .select(col("site").alias("name"))\
+                           .where(col("site").isNotNull())
+    website_lottery_df = lottery_df.dropDuplicates(["site"])\
+                                   .select(col("site").alias("name"))\
+                                   .where(col("site").isNotNull())
+    website_games_df = games_df.dropDuplicates(["siteid"])\
+                               .select(col("siteid").alias("name"))\
+                               .where(col("siteid").isNotNull())
+    website_table = reduce(lambda x, y: x.union(y), [website_log_df,
+                                                     website_reg_df,
+                                                     website_lottery_df,
+                                                     website_games_df])
+    website_table = website_table.withColumn("id",
+                                             monotonically_increasing_id())
+    #TODO: store on Redshift
+    if debug:
+        return website_table
+    return
+
+def create_ticket_table(lottery_df, games_df, debug=False):
+    """Load records to ticket dimension table on Redshift.
+
+    Parameters
+    ----------
+    lottery_df: Spark.dataframe
+        Dataframe with lottery tickets data.
+    games_df: Spark.dataframe
+        Dataframe with instant games data.
+    debug: bool
+        Flag whether the execution is for production or testing.
+    """
+    ticket_table1 = lottery_df.dropDuplicates(["ticketid"])\
+                             .select(col("ticketid").alias("id"),
+                                     col("amountineur").alias("amount"),
+                                     col("feeineur").alias("fee"),
+                                     col("winningsineur").alias("winnings"),
+                                     col("discount"))\
+                            .where(col("timestampunix").isNotNull() &
+                                   col("site").isNotNull() &
+                                   col("customernumber").isNotNull() &
+                                   col("amountincents").isNotNull() &
+                                   col("feeamountincents").isNotNull() &
+                                   col("game").isNotNull() &
+                                   col("orderidentifier").isNotNull() &
+                                   col("orderidentifier").isNotNull() &
+                                   col("ticketid").isNotNull())
+    ticket_table2 = games_df.dropDuplicates(["ticketexternalid"])\
+                            .select(col("ticketexternalid").alias("id"),
+                                    col("amountineur").alias("amount"),
+                                    col("feeineur").alias("fee"),
+                                    col("winningsineur").alias("winnings"),
+                                    col("discount"))\
+                            .where(col("timestamp").isNotNull() &
+                                   col("siteid").isNotNull() &
+                                   col("customernumber").isNotNull() &
+                                   col("gamename").isNotNull() &
+                                   col("priceineur").isNotNull() &
+                                   col("feeineur").isNotNull())
+    ticket_table = reduce(lambda x, y: x.union(y), [ticket_table1,
+                                                    ticket_table2])
+    ticket_table = ticket_table.dropDuplicates(["id"])
+    #TODO: store on Redshift
+    if debug:
+        return ticket_table
+    return                         
+                             
+                             
+                             
+                             
     
                 
                     
