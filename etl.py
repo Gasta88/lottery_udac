@@ -3,7 +3,8 @@ from datetime import datetime
 import time
 import os
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import udf, col, monotonically_increasing_id, lit
+from pyspark.sql.functions import udf, col, monotonically_increasing_id, lit, \
+    concat
 from pyspark.sql.functions import year, month, dayofmonth, hour, weekofyear, \
     date_format
 from pyspark.sql.types import IntegerType, StringType, TimestampType, \
@@ -16,7 +17,11 @@ config.read('aws.cfg')
 
 os.environ['AWS_ACCESS_KEY_ID'] = config['KEYS']['AWS_ACCESS_KEY_ID']
 os.environ['AWS_SECRET_ACCESS_KEY'] = config['KEYS']['AWS_SECRET_ACCESS_KEY']
-
+DWH_DB = config.get("DWH","DWH_DB")
+DWH_HOST = config.get("DWH", "DWH_HOST")
+DWH_DB_USER = config.get("DWH","DWH_DB_USER")
+DWH_DB_PASSWORD = config.get("DWH","DWH_DB_PASSWORD")
+DWH_PORT = config.get("DWH","DWH_PORT")
 
 def create_spark_session():
     """Return Spark session."""
@@ -297,7 +302,138 @@ def create_time_table(log_df, reg_df, lottery_df, games_df, debug=False):
     if debug:
         return time_table
     return  
-      
+
+def create_registrations_tables(spark, reg_df, debug=False):
+    """Load records to registrations facts tables on Redshift.
+
+    Parameters
+    ----------
+    spark: SparkSession obj
+        Spark application
+    reg_df: Spark.dataframe
+        Dataframe with customer registration data.
+    debug: bool
+        Flag whether the execution is for production or testing.
+    """
+    
+    website_df = spark.read \
+                      .format("com.databricks.spark.redshift") \
+                      .option("url", f"{DWH_HOST}:{DWH_PORT}/{DWH_DB}" + "?user="+ DWH_DB_USER +"&password="+ DWH_DB_PASSWORD) \
+                      .option("query", "SELECT * FROM WEBSITES") \
+                      .load()
+    cond = [reg_df.site == website_df.name]
+    registrations_table = reg_df.dropDuplicates(["customernumber", "site", "timestamp"])\
+                                .join(website_df, cond, 'leftouter')\
+                                .select(monotonically_increasing_id().alias("id"),
+                                        col("customernumber"),
+                                        website_df.id.alias("website_id"),
+                                        col("timestamp"))\
+                                .where(col("customernumber").isNotNull() &
+                                       website_df.id.isNotNull() &
+                                       col("timestamp").isNotNull())
+    #TODO: store on Redshift
+    if debug:
+        return registrations_table
+    return  
+
+def create_logins_table(spark, log_df, debug=False):
+    """Load records to logins facts tables on Redshift.
+
+    Parameters
+    ----------
+    spark: SparkSession obj
+        Spark application
+    log_df: Spark.dataframe
+        Dataframe with customer login data.
+    debug: bool
+        Flag whether the execution is for production or testing.
+    """
+    
+    website_df = spark.read \
+                      .format("com.databricks.spark.redshift") \
+                      .option("url", f"{DWH_HOST}:{DWH_PORT}/{DWH_DB}" + "?user="+ DWH_DB_USER +"&password="+ DWH_DB_PASSWORD) \
+                      .option("query", "SELECT * FROM WEBSITES") \
+                      .load()
+    cond = [log_df.site == website_df.name]
+    logins_table = log_df.dropDuplicates(["customernumber", "website", "timestamp"])\
+                         .join(website_df, cond, 'leftouter')\
+                         .select(monotonically_increasing_id().alias("id"),
+                                 col("customernumber"),
+                                 website_df.id.alias("website_id"),
+                                 col("timestamp"))\
+                         .where(col("customernumber").isNotNull() &
+                                website_df.id.isNotNull() &
+                                col("timestamp").isNotNull())
+    #TODO: store on Redshift
+    if debug:
+        return logins_table
+    return
+
+def create_bookings_table(spark, lottery_df, games_df, debug=False):
+    """Load records to bookings facts tables on Redshift.
+
+    Parameters
+    ----------
+    spark: SparkSession obj
+        Spark application
+    lottery_df: Spark.dataframe
+        Dataframe with lottery tickets data.
+    games_df: Spark.dataframe
+        Dataframe with instant games data.
+    debug: bool
+        Flag whether the execution is for production or testing.
+    """
+    website_df = spark.read \
+                      .format("com.databricks.spark.redshift") \
+                      .option("url", f"{DWH_HOST}:{DWH_PORT}/{DWH_DB}" + "?user="+ DWH_DB_USER +"&password="+ DWH_DB_PASSWORD) \
+                      .option("query", "SELECT * FROM WEBSITES") \
+                      .load()
+    product_df = spark.read \
+                      .format("com.databricks.spark.redshift") \
+                      .option("url", f"{DWH_HOST}:{DWH_PORT}/{DWH_DB}" + "?user="+ DWH_DB_USER +"&password="+ DWH_DB_PASSWORD) \
+                      .option("query", "SELECT * FROM PRODUCTS") \
+                      .load()
+
+    lottery_df = lottery_df.dropDuplicates(["ticketid"])\
+                           .select(col("ticketid").alias("id"),
+                                   col("customernumber"),
+                                   col("site").alias("website"),
+                                   col("game"),
+                                   col("timestamp"),
+                                   col("currency"),
+                                   col("princeineur"))\
+                           .where(col("ticketid").isNotNull() &
+                                  col("customernumber").isNotNull() &
+                                  col("site").isNotNull() &
+                                  col("game").isNotNull() &
+                                  col("timestamp").isNotNull())
+    games_df = games_df.dropDuplicates(["ticketexternalid", "aggregationkey"])\
+                       .select(concat(col("ticketexternalid"), col("aggregationkey")).alias("id"),
+                                      col("customernumber"),
+                                      col("siteid").alias("website"),
+                                      col("gamename").alias("game"),
+                                      col("timestamp"),
+                                      col("currency"),
+                                      col("princeineur"))\
+                       .where(concat(col("ticketexternalid"), col("aggregationkey")).isNotNull() &
+                              col("customernumber").isNotNull() &
+                              col("siteid").isNotNull() &
+                              col("gamename").isNotNull() &
+                              col("timestamp").isNotNull())
+    bookings_table =  reduce(lambda x, y: x.union(y), [lottery_df, games_df])
+    cond = [bookings_table.website == website_df.name]
+    # HERE!!
+    # bookings_table = log_df.dropDuplicates(["customernumber", "website", "timestamp"])\
+    #                      .join(website_df, cond, 'leftouter')\
+    #                      .select(monotonically_increasing_id().alias("id"),
+    #                              col("customernumber"),
+    #                              website_df.id.alias("website_id"),
+    #                              col("timestamp"))\
+    #                      .where(col("customernumber").isNotNull() &
+    #                             website_df.id.isNotNull() &
+    #                             col("timestamp").isNotNull())
+     
+     
 def process_song_data(spark, input_data, output_data):
     """Process song data files from S3 buckets.
 
