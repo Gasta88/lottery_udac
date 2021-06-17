@@ -4,7 +4,7 @@ import time
 import os
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf, col, monotonically_increasing_id, lit, \
-    concat
+    concat, lower
 from pyspark.sql.functions import year, month, dayofmonth, hour, weekofyear, \
     date_format
 from pyspark.sql.types import IntegerType, StringType, TimestampType, \
@@ -68,8 +68,10 @@ def process_inputdata(spark, input_data):
     get_timestampunix = udf(lambda x:
                             int(time.mktime(
                                 datetime.strptime(x[:-3], '%Y-%m-%d %H:%M:%S.%f')\
-                                    .timetuple())), IntegerType())
-    get_timestamp = udf(lambda x: int(int(x)/1000), IntegerType())
+                                    .timetuple())) if isinstance(x, str) else 0,
+                                IntegerType())
+    get_timestamp = udf(lambda x: int(int(x)/1000) if isinstance(x, str) else 0,
+                        IntegerType())
     get_datetime = udf(lambda x: datetime.fromtimestamp(x), TimestampType())
     
     # preprocess log_df to change column name to timestamp and add
@@ -107,7 +109,7 @@ def process_inputdata(spark, input_data):
     
     return (log_df, reg_df, lottery_df, games_df)
 
-def create_customer_table(spark, reg_df, debug=False):
+def create_customers_table(spark, reg_df, debug=False):
     """Load records to customer dimension table on Redshift.
 
     Parameters
@@ -144,14 +146,14 @@ def create_customer_table(spark, reg_df, debug=False):
                   .option("dbtable", "CUSTOMERS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("append")\
+                  .mode("overwrite")\
                   .save()
     
     if debug:
        return customer_table
     return
 
-def create_website_table(spark, log_df, reg_df, lottery_df, games_df, debug=False):
+def create_websites_table(spark, log_df, reg_df, lottery_df, games_df, debug=False):
     """Load records to website dimension table on Redshift.
 
     Parameters
@@ -195,13 +197,13 @@ def create_website_table(spark, log_df, reg_df, lottery_df, games_df, debug=Fals
                   .option("dbtable", "WEBSITES")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("append")\
+                  .mode("overwrite")\
                   .save()
     if debug:
         return website_table
     return
 
-def create_ticket_table(spark, lottery_df, games_df, debug=False):
+def create_tickets_table(spark, lottery_df, games_df, debug=False):
     """Load records to ticket dimension table on Redshift.
 
     Parameters
@@ -250,13 +252,13 @@ def create_ticket_table(spark, lottery_df, games_df, debug=False):
                   .option("dbtable", "TICKETS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("append")\
+                  .mode("overwrite")\
                   .save()
     if debug:
         return ticket_table
     return                         
                              
-def create_product_table(spark, lottery_df, games_df, debug=False):                      
+def create_products_table(spark, lottery_df, games_df, debug=False):                      
     """Load records to product dimension table on Redshift.
 
     Parameters
@@ -271,30 +273,32 @@ def create_product_table(spark, lottery_df, games_df, debug=False):
         Flag whether the execution is for production or testing.
     """                            
     prod_table1 = lottery_df.dropDuplicates(["game"])\
-                            .select(col("game").alias("name"))\
+                            .select(lower(col("game")).alias("name"))\
                             .where(col("game").isNotNull())\
-                            .withColumn("type", "lottery_game")
+                            .withColumn("type", lit("lottery_game"))
     prod_table2 = games_df.dropDuplicates(["gamename"])\
-                          .select(col("gamename").alias("name"))\
+                          .select(lower(col("gamename")).alias("name"))\
                           .where(col("gamename").isNotNull())\
-                          .withColumn("type", "instant_game")
+                          .withColumn("type", lit("instant_game"))
     product_table =  reduce(lambda x, y: x.union(y), [prod_table1,
                                                       prod_table2])
-    product_table = product_table.withColumn("id",
-                                             monotonically_increasing_id())
+    product_table = product_table.dropDuplicates(["name"])\
+                             .sort("name", ascending=True)\
+                             .withColumn("id",
+                                         monotonically_increasing_id())
     product_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
                   .option("dbtable", "PRODUCTS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("append")\
+                  .mode("overwrite")\
                   .save()
     if debug:
         return product_table
     return  
 
-def create_time_table(spark, log_df, reg_df, lottery_df, games_df, debug=False):
+def create_times_table(spark, log_df, reg_df, lottery_df, games_df, debug=False):
     """Load records to time dimension table on Redshift.
 
     Parameters
@@ -348,7 +352,7 @@ def create_time_table(spark, log_df, reg_df, lottery_df, games_df, debug=False):
                   .option("dbtable", "TIMES")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("append")\
+                  .mode("overwrite")\
                   .save()
     if debug:
         return time_table
@@ -369,7 +373,9 @@ def create_registrations_tables(spark, reg_df, debug=False):
     
     website_df = spark.read \
                       .format("com.databricks.spark.redshift") \
-                      .option("url", f"{DWH_HOST}:{DWH_PORT}/{DWH_DB}" + "?user="+ DWH_DB_USER +"&password="+ DWH_DB_PASSWORD) \
+                      .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
+                      .option("aws_region", "us-east-1")\
+                      .option("tempdir", "s3://udac-lottery-data/")\
                       .option("query", "SELECT * FROM WEBSITES") \
                       .load()
     cond = [reg_df.site == website_df.name]
@@ -388,7 +394,7 @@ def create_registrations_tables(spark, reg_df, debug=False):
                   .option("dbtable", "REGISTRATIONS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("append")\
+                  .mode("overwrite")\
                   .save()
     if debug:
         return registrations_table
@@ -409,11 +415,13 @@ def create_logins_table(spark, log_df, debug=False):
     
     website_df = spark.read \
                       .format("com.databricks.spark.redshift") \
-                      .option("url", f"{DWH_HOST}:{DWH_PORT}/{DWH_DB}" + "?user="+ DWH_DB_USER +"&password="+ DWH_DB_PASSWORD) \
+                      .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
+                      .option("aws_region", "us-east-1")\
+                      .option("tempdir", "s3://udac-lottery-data/")\
                       .option("query", "SELECT * FROM WEBSITES") \
                       .load()
     cond = [log_df.site == website_df.name]
-    logins_table = log_df.dropDuplicates(["customernumber", "website", "timestamp"])\
+    logins_table = log_df.dropDuplicates(["customernumber", "site", "timestamp"])\
                          .join(website_df, cond, 'leftouter')\
                          .select(monotonically_increasing_id().alias("id"),
                                  col("customernumber"),
@@ -428,7 +436,7 @@ def create_logins_table(spark, log_df, debug=False):
                   .option("dbtable", "LOGINS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("append")\
+                  .mode("overwrite")\
                   .save()
     if debug:
         return logins_table
@@ -450,12 +458,16 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
     """
     website_df = spark.read \
                       .format("com.databricks.spark.redshift") \
-                      .option("url", f"{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
+                      .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
+                      .option("aws_region", "us-east-1")\
+                      .option("tempdir", "s3://udac-lottery-data/")\
                       .option("query", "SELECT * FROM WEBSITES") \
                       .load()
     product_df = spark.read \
                       .format("com.databricks.spark.redshift") \
-                      .option("url", f"{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
+                      .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
+                      .option("aws_region", "us-east-1")\
+                      .option("tempdir", "s3://udac-lottery-data/")\
                       .option("query", "SELECT * FROM PRODUCTS") \
                       .load()
 
@@ -479,10 +491,10 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
                                       col("gamename").alias("game"),
                                       col("timestamp"),
                                       col("currency"),
-                                      col("princeineur").alias("amount"))\
+                                      col("priceineur").alias("amount"))\
                        .where(concat(col("ticketexternalid"), col("aggregationkey")).isNotNull() &
                               col("customernumber").isNotNull() &
-                              col("siteid").isNotNull() &
+                              col("sitetid").isNotNull() &
                               col("gamename").isNotNull() &
                               col("timestamp").isNotNull())
     
@@ -490,7 +502,7 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
     
     cond_website = [bookings_table.website == website_df.name]
     cond_product = [bookings_table.game == product_df.name]
-    bookings_table = bookings_table.dropDuplicates(["customernumber", "website", "timestamp", "ticketid"])\
+    bookings_table = bookings_table.dropDuplicates(["customernumber", "website", "timestamp", "ticket_id"])\
                                    .join(website_df, cond_website, 'leftouter')\
                                    .join(product_df, cond_product, 'leftouter')\
                                    .select(monotonically_increasing_id().alias("id"),
@@ -512,7 +524,7 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
                   .option("dbtable", "BOOKINGS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("append")\
+                  .mode("overwrite")\
                   .save()
     if debug:
         return bookings_table
@@ -524,14 +536,14 @@ def main():
     input_data = "s3a://udac-lottery-data/"
     
     log_df, reg_df, lottery_df, games_df = process_inputdata(spark, input_data)
-    create_customer_table(spark, reg_df, debug=1)
-    # create_website_table(spark, log_df, reg_df, lottery_df, games_df)
-    # create_ticket_table(spark, lottery_df, games_df)
-    # create_product_table(spark, lottery_df, games_df)
-    # create_time_table(spark, log_df, reg_df, lottery_df, games_df)
-    # create_registrations_tables(spark, reg_df)
-    # create_logins_table(spark, log_df)
-    # create_bookings_table(spark, lottery_df, games_df)
+    create_customers_table(spark, reg_df, debug=1)
+    create_websites_table(spark, log_df, reg_df, lottery_df, games_df)
+    create_tickets_table(spark, lottery_df, games_df)
+    create_products_table(spark, lottery_df, games_df)
+    create_times_table(spark, log_df, reg_df, lottery_df, games_df)
+    create_registrations_tables(spark, reg_df)
+    create_logins_table(spark, log_df)
+    create_bookings_table(spark, lottery_df, games_df)
 
 if __name__ == "__main__":
     main()
