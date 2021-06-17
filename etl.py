@@ -17,8 +17,7 @@ config.read('aws.cfg')
 
 os.environ['AWS_ACCESS_KEY_ID'] = config['AWS']['KEY']
 os.environ['AWS_SECRET_ACCESS_KEY'] = config['AWS']['SECRET']
-# DWH_DB = config.get("DWH","DWH_DB")
-DWH_DB = 'dev'
+DWH_DB = config.get("DWH","DB_NAME")
 DWH_HOST = config.get("DWH", "HOST")
 DWH_DB_USER = config.get("DWH","DB_USER")
 DWH_DB_PASSWORD = config.get("DWH","DB_PASSWORD")
@@ -67,9 +66,9 @@ def process_inputdata(spark, input_data):
     
     # udf definitions
     get_timestampunix = udf(lambda x:
-                            time.mktime(
+                            int(time.mktime(
                                 datetime.strptime(x[:-3], '%Y-%m-%d %H:%M:%S.%f')\
-                                    .timetuple()), IntegerType())
+                                    .timetuple())), IntegerType())
     get_timestamp = udf(lambda x: int(int(x)/1000), IntegerType())
     get_datetime = udf(lambda x: datetime.fromtimestamp(x), TimestampType())
     
@@ -91,7 +90,7 @@ def process_inputdata(spark, input_data):
                                        get_timestamp(lottery_df.timestampunix))
     lottery_df = lottery_df.withColumn("datetime",
                                        get_datetime(lottery_df.timestamp))
-    lottery_df = lottery_df.withColumn("priceineur",
+    lottery_df = lottery_df.withColumn("amountineur",
                                        col("amountincents") / 100)\
                            .withColumn("feeineur",
                                        col("feeamountincents") / 100)\
@@ -149,7 +148,7 @@ def create_customer_table(spark, reg_df, debug=False):
                   .save()
     
     if debug:
-        return customer_table
+       return customer_table
     return
 
 def create_website_table(spark, log_df, reg_df, lottery_df, games_df, debug=False):
@@ -179,15 +178,17 @@ def create_website_table(spark, log_df, reg_df, lottery_df, games_df, debug=Fals
     website_lottery_df = lottery_df.dropDuplicates(["site"])\
                                    .select(col("site").alias("name"))\
                                    .where(col("site").isNotNull())
-    website_games_df = games_df.dropDuplicates(["siteid"])\
-                               .select(col("siteid").alias("name"))\
-                               .where(col("siteid").isNotNull())
+    website_games_df = games_df.dropDuplicates(["sitetid"])\
+                               .select(col("sitetid").alias("name"))\
+                               .where(col("sitetid").isNotNull())
     website_table = reduce(lambda x, y: x.union(y), [website_log_df,
                                                      website_reg_df,
                                                      website_lottery_df,
                                                      website_games_df])
-    website_table = website_table.withColumn("id",
-                                             monotonically_increasing_id())
+    website_table = website_table.dropDuplicates(["name"])\
+                             .sort("name", ascending=True)\
+                             .withColumn("id",
+                                         monotonically_increasing_id())
     website_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
@@ -218,25 +219,23 @@ def create_ticket_table(spark, lottery_df, games_df, debug=False):
                              .select(col("ticketid").alias("id"),
                                      col("amountineur").alias("amount"),
                                      col("feeineur").alias("fee"),
-                                     col("winningsineur").alias("winnings"),
-                                     col("discount"))\
+                                     col("winningsineur").alias("winnings"))\
                             .where(col("timestampunix").isNotNull() &
                                    col("site").isNotNull() &
                                    col("customernumber").isNotNull() &
-                                   col("amountincents").isNotNull() &
-                                   col("feeamountincents").isNotNull() &
+                                   col("amountineur").isNotNull() &
+                                   col("feeineur").isNotNull() &
                                    col("game").isNotNull() &
                                    col("orderidentifier").isNotNull() &
                                    col("orderidentifier").isNotNull() &
                                    col("ticketid").isNotNull())
     ticket_table2 = games_df.dropDuplicates(["ticketexternalid", "aggregationkey"])\
                             .select(concat(col("ticketexternalid"), col("aggregationkey")).alias("id"),
-                                    col("amountineur").alias("amount"),
+                                    col("priceineur").alias("amount"),
                                     col("feeineur").alias("fee"),
-                                    col("winningsineur").alias("winnings"),
-                                    col("discount"))\
+                                    col("winningsineur").alias("winnings"))\
                             .where(col("timestamp").isNotNull() &
-                                   col("siteid").isNotNull() &
+                                   col("sitetid").isNotNull() &
                                    col("customernumber").isNotNull() &
                                    col("gamename").isNotNull() &
                                    col("priceineur").isNotNull() &
@@ -467,7 +466,7 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
                                    col("game"),
                                    col("timestamp"),
                                    col("currency"),
-                                   col("princeineur"))\
+                                   col("amountineur").alias("amount"))\
                            .where(col("ticketid").isNotNull() &
                                   col("customernumber").isNotNull() &
                                   col("site").isNotNull() &
@@ -476,11 +475,11 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
     games_df = games_df.dropDuplicates(["ticketexternalid", "aggregationkey"])\
                        .select(concat(col("ticketexternalid"), col("aggregationkey")).alias("ticket_id"),
                                       col("customernumber"),
-                                      col("siteid").alias("website"),
+                                      col("sitetid").alias("website"),
                                       col("gamename").alias("game"),
                                       col("timestamp"),
                                       col("currency"),
-                                      col("princeineur"))\
+                                      col("princeineur").alias("amount"))\
                        .where(concat(col("ticketexternalid"), col("aggregationkey")).isNotNull() &
                               col("customernumber").isNotNull() &
                               col("siteid").isNotNull() &
@@ -501,7 +500,7 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
                                            col("ticket_id"),
                                            product_df.id.alias("product_id"),
                                            col("currency"),
-                                           col("priceineur"))\
+                                           col("amount"))\
                                    .where(col("customernumber").isNotNull() &
                                           website_df.id.isNotNull() &
                                           col("timestamp").isNotNull() &
@@ -525,14 +524,14 @@ def main():
     input_data = "s3a://udac-lottery-data/"
     
     log_df, reg_df, lottery_df, games_df = process_inputdata(spark, input_data)
-    create_customer_table(spark, reg_df)
-    create_website_table(spark, log_df, reg_df, lottery_df, games_df)
-    create_ticket_table(spark, lottery_df, games_df)
-    create_product_table(spark, lottery_df, games_df)
-    create_time_table(spark, log_df, reg_df, lottery_df, games_df)
-    create_registrations_tables(spark, reg_df)
-    create_logins_table(spark, log_df)
-    create_bookings_table(spark, lottery_df, games_df)
+    create_customer_table(spark, reg_df, debug=1)
+    # create_website_table(spark, log_df, reg_df, lottery_df, games_df)
+    # create_ticket_table(spark, lottery_df, games_df)
+    # create_product_table(spark, lottery_df, games_df)
+    # create_time_table(spark, log_df, reg_df, lottery_df, games_df)
+    # create_registrations_tables(spark, reg_df)
+    # create_logins_table(spark, log_df)
+    # create_bookings_table(spark, lottery_df, games_df)
 
 if __name__ == "__main__":
     main()
