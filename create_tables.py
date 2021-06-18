@@ -26,8 +26,8 @@ def drop_tables(cur, conn):
 
 def create_tables(cur, conn):
     customers_table_create = ("""CREATE TABLE IF NOT EXISTS customers(
-                                                   customernumber BIGINT PRIMARY KEY sortkey,      
-                                                   customeremail TEXT,
+                                                   id BIGINT PRIMARY KEY sortkey,      
+                                                   email TEXT,
                                                    dateofbirth TEXT,
                                                    familyname TEXT,
                                                    givennames TEXT,
@@ -54,38 +54,39 @@ def create_tables(cur, conn):
                                                   type TEXT);
                              """)
     times_create_table = ("""CREATE TABLE IF NOT EXISTS times(
-                                            "timestamp" TIMESTAMP PRIMARY KEY sortkey,
+                                            "timestamp" BIGINT PRIMARY KEY sortkey,
                                             hour INTEGER ,
                                             day INTEGER ,
                                             week INTEGER ,
                                             month INTEGER ,
                                             year INTEGER ,
-                                            weekday INTEGER ) diststyle all
+                                            weekday TEXT ) diststyle all
                           """)
     registrations_create_table = ("""CREATE TABLE IF NOT EXISTS registrations(
                                             id BIGINT PRIMARY KEY,
-                                            customernumber BIGINT NOT NULL REFERENCES customers(customernumber) distkey,
-                                            website_id BIGINT NOT NULL REFERENCES website(id),
-                                            "timestamp" TIMESTAMP NOT NULL REFERENCES times("timestamp") sortkey);
+                                            customernumber BIGINT NOT NULL REFERENCES customers(id) distkey,
+                                            website_id BIGINT NOT NULL REFERENCES websites(id),
+                                            "timestamp" BIGINT NOT NULL REFERENCES times("timestamp") sortkey);
                           """)
     logins_create_table = ("""CREATE TABLE IF NOT EXISTS logins(
                                             id BIGINT PRIMARY KEY,
-                                            customernumber BIGINT NOT NULL REFERENCES customers(customernumber) distkey,
-                                            website_id BIGINT NOT NULL REFERENCES website(id),
-                                            "timestamp" TIMESTAMP NOT NULL REFERENCES times("timestamp") sortkey);
+                                            customernumber BIGINT NOT NULL REFERENCES customers(id) distkey,
+                                            website_id BIGINT NOT NULL REFERENCES websites(id),
+                                            "timestamp" BIGINT NOT NULL REFERENCES times("timestamp") sortkey);
                            """)
     bookings_create_table = ("""CREATE TABLE IF NOT EXISTS bookings(
                                             id BIGINT PRIMARY KEY,
-                                            customernumber BIGINT NOT NULL REFERENCES customers(customernumber) distkey,
-                                            website_id BIGINT NOT NULL REFERENCES website(id),
-                                            "timestamp" TIMESTAMP NOT NULL REFERENCES times("timestamp") sortkey
+                                            customernumber BIGINT NOT NULL REFERENCES customers(id) distkey,
+                                            website_id BIGINT NOT NULL REFERENCES websites(id),
+                                            "timestamp" BIGINT NOT NULL REFERENCES times("timestamp") sortkey,
                                             ticket_id TEXT NOT NULL REFERENCES tickets(id),
                                             product_id BIGINT NOT NULL REFERENCES products(id),
                                             currency TEXT,
                                             amount REAL);
                            """)
     queries = [customers_table_create, websites_table_create,
-               tickets_create_table, times_create_table,
+               tickets_create_table, products_create_table,
+               times_create_table,
                registrations_create_table, logins_create_table,
                bookings_create_table]
     for query in queries:

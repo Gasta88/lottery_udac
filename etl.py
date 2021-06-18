@@ -146,7 +146,7 @@ def create_customers_table(spark, reg_df, debug=False):
                   .option("dbtable", "CUSTOMERS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("overwrite")\
+                  .mode("append")\
                   .save()
     
     if debug:
@@ -197,7 +197,7 @@ def create_websites_table(spark, log_df, reg_df, lottery_df, games_df, debug=Fal
                   .option("dbtable", "WEBSITES")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("overwrite")\
+                  .mode("append")\
                   .save()
     if debug:
         return website_table
@@ -236,7 +236,8 @@ def create_tickets_table(spark, lottery_df, games_df, debug=False):
                                     col("priceineur").alias("amount"),
                                     col("feeineur").alias("fee"),
                                     col("winningsineur").alias("winnings"))\
-                            .where(col("timestamp").isNotNull() &
+                            .where(concat(col("ticketexternalid"), col("aggregationkey")).isNotNull() &
+                                   col("timestamp").isNotNull() &
                                    col("sitetid").isNotNull() &
                                    col("customernumber").isNotNull() &
                                    col("gamename").isNotNull() &
@@ -252,7 +253,7 @@ def create_tickets_table(spark, lottery_df, games_df, debug=False):
                   .option("dbtable", "TICKETS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("overwrite")\
+                  .mode("append")\
                   .save()
     if debug:
         return ticket_table
@@ -292,7 +293,7 @@ def create_products_table(spark, lottery_df, games_df, debug=False):
                   .option("dbtable", "PRODUCTS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("overwrite")\
+                  .mode("append")\
                   .save()
     if debug:
         return product_table
@@ -352,7 +353,7 @@ def create_times_table(spark, log_df, reg_df, lottery_df, games_df, debug=False)
                   .option("dbtable", "TIMES")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("overwrite")\
+                  .mode("append")\
                   .save()
     if debug:
         return time_table
@@ -394,7 +395,7 @@ def create_registrations_tables(spark, reg_df, debug=False):
                   .option("dbtable", "REGISTRATIONS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("overwrite")\
+                  .mode("append")\
                   .save()
     if debug:
         return registrations_table
@@ -436,7 +437,7 @@ def create_logins_table(spark, log_df, debug=False):
                   .option("dbtable", "LOGINS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("overwrite")\
+                  .mode("append")\
                   .save()
     if debug:
         return logins_table
@@ -524,7 +525,7 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
                   .option("dbtable", "BOOKINGS")\
                   .option("aws_region", "us-east-1")\
                   .option("tempdir", "s3://udac-lottery-data/")\
-                  .mode("overwrite")\
+                  .mode("append")\
                   .save()
     if debug:
         return bookings_table
