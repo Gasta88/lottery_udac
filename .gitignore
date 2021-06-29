@@ -1,4 +1,5 @@
 data/
-venv/
 __pycache__/
 *.pyc
+notebooks/experiments.ipynb
+create_aws_env.py

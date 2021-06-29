@@ -3,6 +3,15 @@ import psycopg2
 
 
 def drop_tables(cur, conn):
+    """Execute DROP TABLE SQL statements on the database.
+
+    Parameters
+    ----------
+    cur: cursor object
+        Database cursor.
+    conn: connection object
+        Database connection.
+    """
     registrations_table_drop = "DROP TABLE IF EXISTS registrations;"
     bookings_table_drop = "DROP TABLE IF EXISTS bookings;"
     logins_table_drop = "DROP TABLE IF EXISTS logins;"
@@ -25,6 +34,15 @@ def drop_tables(cur, conn):
 
 
 def create_tables(cur, conn):
+    """Execute CREATE TABLE SQL statements on the database.
+
+    Parameters
+    ----------
+    cur: cursor object
+        Database cursor.
+    conn: connection object
+        Database connection.
+    """
     customers_table_create = ("""CREATE TABLE IF NOT EXISTS customers(
                                                    id BIGINT PRIMARY KEY sortkey,      
                                                    email TEXT,
@@ -95,6 +113,7 @@ def create_tables(cur, conn):
 
 
 def main():
+    """Run main steps for the script."""
     config = configparser.ConfigParser()
     config.read('aws.cfg')
     

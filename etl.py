@@ -7,8 +7,7 @@ from pyspark.sql.functions import udf, col, monotonically_increasing_id, lit, \
     concat, lower
 from pyspark.sql.functions import year, month, dayofmonth, hour, weekofyear, \
     date_format
-from pyspark.sql.types import IntegerType, StringType, TimestampType, \
-    StructType, StructField, DoubleType, LongType
+from pyspark.sql.types import IntegerType, StringType, TimestampType
 from functools import reduce
 
 
@@ -346,7 +345,8 @@ def create_times_table(spark, log_df, reg_df, lottery_df, games_df, debug=False)
                            .withColumn("weekday", date_format('datetime', 'E'))\
                            .select(col("timestamp"),
                                    col("hour"), col("day"), col("week"),
-                                   col("month"), col("year"), col("weekday"))
+                                   col("month"), col("year"), col("weekday"))\
+                           .where(col("timestamp") >= 1514808000)
     time_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
@@ -476,7 +476,7 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
                            .select(col("ticketid").alias("ticket_id"),
                                    col("customernumber"),
                                    col("site").alias("website"),
-                                   col("game"),
+                                   lower(col("game")).alias("game"),
                                    col("timestamp"),
                                    col("currency"),
                                    col("amountineur").alias("amount"))\
@@ -489,7 +489,7 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
                        .select(concat(col("ticketexternalid"), col("aggregationkey")).alias("ticket_id"),
                                       col("customernumber"),
                                       col("sitetid").alias("website"),
-                                      col("gamename").alias("game"),
+                                      lower(col("gamename")).alias("game"),
                                       col("timestamp"),
                                       col("currency"),
                                       col("priceineur").alias("amount"))\
@@ -537,7 +537,7 @@ def main():
     input_data = "s3a://udac-lottery-data/"
     
     log_df, reg_df, lottery_df, games_df = process_inputdata(spark, input_data)
-    create_customers_table(spark, reg_df, debug=1)
+    create_customers_table(spark, reg_df)
     create_websites_table(spark, log_df, reg_df, lottery_df, games_df)
     create_tickets_table(spark, lottery_df, games_df)
     create_products_table(spark, lottery_df, games_df)
