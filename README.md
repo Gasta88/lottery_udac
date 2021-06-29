@@ -28,7 +28,7 @@ The visualization is done in Jupyter notebook using [Pandas](https://pandas.pyda
 
 ## Schema design
 
-![image info](./imgs/imgs/multi-START.png)
+![image info](./imgs/multi-START.png)
 
 ### Main design
 
@@ -63,9 +63,13 @@ Running the notebook `EDA.ipynb` it is possible to see that there are some incon
 be simply ignored.
 In other scenarios, the problematic records could be stored in `quarantine` set of tables used for manual inspections. This would provide the following advantages:
 
-    - records are not simply discarded and everything is kept for possible future updates and corrections
-    - records can be used for a cross-departament investigation to spot out problems that have passed unobserved (ex: implementation of some access points is faulty, some useful data is lost while it is expected to be captured, etc)
-    - records won't compromise the ETL workflow when an error is discovered. Records fit for the OLAP section of the data warehouse can still be correctly used.
+- records are not simply discarded and everything is kept for possible future updates and corrections
+
+- records can be used for a cross-departament investigation to spot out problems that have passed unobserved 
+   (ex: implementation of some access points is faulty, some useful data is lost while it is expected to be captured, etc)
+
+- records won't compromise the ETL workflow when an error is discovered. 
+  Records fit for the OLAP section of the data warehouse can still be correctly used.
 
 
 ### Initial data processing
