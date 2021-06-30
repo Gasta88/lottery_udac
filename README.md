@@ -35,6 +35,8 @@ The visualization is done in Jupyter notebook using [Pandas](https://pandas.pyda
 
 ![image info](./imgs/multi-START.png)
 
+A data dictionary is available [in the repository](data-dictionary.xlsx)
+
 ### Main design
 
 The database `lotterydb` holds information about bookings and user events, such as registrations and logins. 
