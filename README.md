@@ -3,10 +3,15 @@
 ## Purpose/Goals
 
 The company Lotto24 is an online provider of state licensed lotteries. From several servers, they log user activities (access and registration) and purchases of different items. 
-
 For this case study, only lottery tickets and instant games are considered.
 
-The objective of this project is to create a data warehouse where a star schema can be hosted for analytical investigations, along with a small data visualization notebook to run some queries on the database.
+The company would like to collect/organize these different information into a data warehouse, where a STAR schema can help dwelve deeper into the data and answer analytical questions such as:
+
+- Changes and trends in user activity across their websites through time.
+- Customer billing across time and types of product purchased.
+- Customer registration on their data platform, stratified by time and location.
+
+Along with the data warehouse, there is a small data visualization notebook to run some queries. These are just examples on how to interrogate the system and it can be easily extended.
 
 The data warehouse is implemented in [AWS Redshift](https://docs.aws.amazon.com/redshift/latest/mgmt/welcome.html) , while the data is manipulated via [Apache Spark](https://spark.apache.org/) run on an [AWS EMR](https://aws.amazon.com/emr/?whats-new-cards.sort-by=item.additionalFields.postDateTime&whats-new-cards.sort-order=desc) cluster.
 
@@ -39,6 +44,11 @@ The star schema is made of 3 fact tables and 5 dimension tables.
    - *fact tables*: `bookings`, `logins` and `registrations`
    - *dimension tables*: `customers`, `websites`, `times`, `products` and `tickets`
 
+The reason behind developing a multi-fact table STAR schema is dictated by the type of data collected from the different systems. Logins, registrations and ticket bookings are conceptualy different between each other. Clustering all of them together into a single fact table would make it difficult for analysts o understand the business logic of the platform. 
+
+The classic *STAR* schema (ex: 1 fact table linked to N dimension tables) and the *snowflake* schema hold different advantages, but they do not allow the collection of numerical facts into distinguished tables.
+
+Three distinct fact tables with shared dimension tables can help query certain aspect of the business without having to pull back irrelevant data for the query. This should improve performances and help the users to dedicate resource to parts of the system instead of loading everything together.
 
 ### Data assumptions
 
