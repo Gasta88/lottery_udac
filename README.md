@@ -167,3 +167,4 @@ Important files in the repository are:
 - `RedshiftJDBC4-no-awssdk-1.2.20.1043.jar`: AWS Redshift JDBC driver to connect PySpark to the database for read/write operations.
 - `imgs`: contains the PNG of the star schema.
 - `aws.cfg`: contains configuration parameters for AWS.
+- `data-dictionary.xlsx`: contains data dictionary from the AWS Redshift database.
