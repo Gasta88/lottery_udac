@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 notebooks/experiments.ipynb
 create_aws_env.py
+venv/
