@@ -139,6 +139,8 @@ def create_customers_table(spark, reg_df, debug=False):
                                   col("timestamp").isNotNull() &
                                   col("dateofbirth").isNotNull() &
                                   col("customeremail").rlike('^[a-z0-9]+[\._]?[a-z0-9]+[@]\w+[.]\w{2,3}$'))
+    if debug:
+       return customer_table
     customer_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
@@ -147,9 +149,6 @@ def create_customers_table(spark, reg_df, debug=False):
                   .option("tempdir", "s3://udac-lottery-data/")\
                   .mode("append")\
                   .save()
-    
-    if debug:
-       return customer_table
     return
 
 def create_websites_table(spark, log_df, reg_df, lottery_df, games_df, debug=False):
@@ -190,6 +189,8 @@ def create_websites_table(spark, log_df, reg_df, lottery_df, games_df, debug=Fal
                              .sort("name", ascending=True)\
                              .withColumn("id",
                                          monotonically_increasing_id())
+    if debug:
+        return website_table
     website_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
@@ -198,8 +199,6 @@ def create_websites_table(spark, log_df, reg_df, lottery_df, games_df, debug=Fal
                   .option("tempdir", "s3://udac-lottery-data/")\
                   .mode("append")\
                   .save()
-    if debug:
-        return website_table
     return
 
 def create_tickets_table(spark, lottery_df, games_df, debug=False):
@@ -246,6 +245,8 @@ def create_tickets_table(spark, lottery_df, games_df, debug=False):
                                                     ticket_table2])
     ticket_table = ticket_table.dropDuplicates(["id"])
     
+    if debug:
+        return ticket_table
     ticket_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
@@ -254,8 +255,6 @@ def create_tickets_table(spark, lottery_df, games_df, debug=False):
                   .option("tempdir", "s3://udac-lottery-data/")\
                   .mode("append")\
                   .save()
-    if debug:
-        return ticket_table
     return                         
                              
 def create_products_table(spark, lottery_df, games_df, debug=False):                      
@@ -286,6 +285,8 @@ def create_products_table(spark, lottery_df, games_df, debug=False):
                              .sort("name", ascending=True)\
                              .withColumn("id",
                                          monotonically_increasing_id())
+    if debug:
+        return product_table
     product_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
@@ -294,8 +295,6 @@ def create_products_table(spark, lottery_df, games_df, debug=False):
                   .option("tempdir", "s3://udac-lottery-data/")\
                   .mode("append")\
                   .save()
-    if debug:
-        return product_table
     return  
 
 def create_times_table(spark, log_df, reg_df, lottery_df, games_df, debug=False):
@@ -347,6 +346,8 @@ def create_times_table(spark, log_df, reg_df, lottery_df, games_df, debug=False)
                                    col("hour"), col("day"), col("week"),
                                    col("month"), col("year"), col("weekday"))\
                            .where(col("timestamp") >= 1514808000)
+    if debug:
+        return time_table
     time_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
@@ -355,8 +356,6 @@ def create_times_table(spark, log_df, reg_df, lottery_df, games_df, debug=False)
                   .option("tempdir", "s3://udac-lottery-data/")\
                   .mode("append")\
                   .save()
-    if debug:
-        return time_table
     return  
 
 def create_registrations_tables(spark, reg_df, debug=False):
@@ -389,6 +388,8 @@ def create_registrations_tables(spark, reg_df, debug=False):
                                 .where(col("customernumber").isNotNull() &
                                        website_df.id.isNotNull() &
                                        col("timestamp").isNotNull())
+    if debug:
+        return registrations_table
     registrations_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
@@ -397,8 +398,6 @@ def create_registrations_tables(spark, reg_df, debug=False):
                   .option("tempdir", "s3://udac-lottery-data/")\
                   .mode("append")\
                   .save()
-    if debug:
-        return registrations_table
     return  
 
 def create_logins_table(spark, log_df, debug=False):
@@ -431,6 +430,8 @@ def create_logins_table(spark, log_df, debug=False):
                          .where(col("customernumber").isNotNull() &
                                 website_df.id.isNotNull() &
                                 col("timestamp").isNotNull())
+    if debug:
+        return logins_table
     logins_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
@@ -439,8 +440,6 @@ def create_logins_table(spark, log_df, debug=False):
                   .option("tempdir", "s3://udac-lottery-data/")\
                   .mode("append")\
                   .save()
-    if debug:
-        return logins_table
     return
 
 def create_bookings_table(spark, lottery_df, games_df, debug=False):
@@ -519,6 +518,8 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
                                           col("timestamp").isNotNull() &
                                           col("ticket_id").isNotNull() &
                                           product_df.id.alias("product_id").isNotNull())
+    if debug:
+        return bookings_table
     bookings_table.write \
                   .format("com.databricks.spark.redshift")\
                   .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}")\
@@ -527,8 +528,6 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
                   .option("tempdir", "s3://udac-lottery-data/")\
                   .mode("append")\
                   .save()
-    if debug:
-        return bookings_table
     return
 
 def main():
