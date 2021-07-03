@@ -3,10 +3,15 @@
 ## Purpose/Goals
 
 The company Lotto24 is an online provider of state licensed lotteries. From several servers, they log user activities (access and registration) and purchases of different items. 
-
 For this case study, only lottery tickets and instant games are considered.
 
-The objective of this project is to create a data warehouse where a star schema can be hosted for analytical investigations, along with a small data visualization notebook to run some queries on the database.
+The company would like to collect/organize these different information into a data warehouse, where a STAR schema can help dwelve deeper into the data and answer analytical questions such as:
+
+- Changes and trends in user activity across their websites through time.
+- Customer billing across time and types of product purchased.
+- Customer registration on their data platform, stratified by time and location.
+
+Along with the data warehouse, there is a small data visualization notebook to run some queries. These are just examples on how to interrogate the system and it can be easily extended.
 
 The data warehouse is implemented in [AWS Redshift](https://docs.aws.amazon.com/redshift/latest/mgmt/welcome.html) , while the data is manipulated via [Apache Spark](https://spark.apache.org/) run on an [AWS EMR](https://aws.amazon.com/emr/?whats-new-cards.sort-by=item.additionalFields.postDateTime&whats-new-cards.sort-order=desc) cluster.
 
@@ -30,6 +35,8 @@ The visualization is done in Jupyter notebook using [Pandas](https://pandas.pyda
 
 ![image info](./imgs/multi-START.png)
 
+A data dictionary is available [in the repository](data-dictionary.xlsx)
+
 ### Main design
 
 The database `lotterydb` holds information about bookings and user events, such as registrations and logins. 
@@ -39,6 +46,11 @@ The star schema is made of 3 fact tables and 5 dimension tables.
    - *fact tables*: `bookings`, `logins` and `registrations`
    - *dimension tables*: `customers`, `websites`, `times`, `products` and `tickets`
 
+The reason behind developing a multi-fact table STAR schema is dictated by the type of data collected from the different systems. Logins, registrations and ticket bookings are conceptualy different between each other. Clustering all of them together into a single fact table would make it difficult for analysts o understand the business logic of the platform. 
+
+The classic *STAR* schema (ex: 1 fact table linked to N dimension tables) and the *snowflake* schema hold different advantages, but they do not allow the collection of numerical facts into distinguished tables.
+
+Three distinct fact tables with shared dimension tables can help query certain aspect of the business without having to pull back irrelevant data for the query. This should improve performances and help the users to dedicate resource to parts of the system instead of loading everything together.
 
 ### Data assumptions
 
@@ -145,7 +157,24 @@ Once the repository is cloned locally, follow these steps:
 9. When the ETL is completed, terminate the AWS EMR cluster via AWS Console.
  
 10. Run the `notebooks/data_visualization.ipynb` to inspect the default queries in the data warehouse.
- 
+
+### Run unittests
+
+To simplify the run for unittest, it is suggested to crete a virtual environment and import the modules specified in the file `requirements.txt`.
+
+1. On console run `python3 -m venv venv`. This will create the virtual environment.
+2. Access the virtual environment via `source venv/bin/activate`
+3. Once the environment is active, run `pip install -r requirements.txt`. This might take some time.
+4. On console run `python -m unittest discover -vvv`. This will automatically run the unittest scripts in verbose mode.
+The results of the tests are displayed in console.
+
+Depending on the data source, the test will check that the ETL performs standard actions like:
+
+- Checking that the dataframe is not empty.
+- Checking that certain mandatory fields do not contain empty values.
+- Checking the number of distinct values for certain fields.
+- Checking the distinct values for certain fields.
+
 ## Files in the repo
 
 Important files in the repository are:
@@ -155,3 +184,8 @@ Important files in the repository are:
 - `RedshiftJDBC4-no-awssdk-1.2.20.1043.jar`: AWS Redshift JDBC driver to connect PySpark to the database for read/write operations.
 - `imgs`: contains the PNG of the star schema.
 - `aws.cfg`: contains configuration parameters for AWS.
+- `data-dictionary.xlsx`: contains data dictionary from the AWS Redshift database.
+- `tests`: contains test data and test scripts.
+  -   `test_data`: contains samples of data used in the unittest scripts from all the different sources.
+  -   `__init__.py`
+  -   `test_etl.py`: unittest script for `etl.py` script.
