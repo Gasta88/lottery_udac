@@ -186,6 +186,6 @@ Important files in the repository are:
 - `aws.cfg`: contains configuration parameters for AWS.
 - `data-dictionary.xlsx`: contains data dictionary from the AWS Redshift database.
 - `tests`: contains test data and test scripts.
-        -   `test_data`: contains samples of data used in the unittest scripts from all the different sources.
-        -   `__init__.py`
-        -   `test_etl.py`: unittest script for `etl.py` script.
+  -   `test_data`: contains samples of data used in the unittest scripts from all the different sources.
+  -   `__init__.py`
+  -   `test_etl.py`: unittest script for `etl.py` script.
