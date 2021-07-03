@@ -2,6 +2,7 @@ import configparser
 from datetime import datetime
 import time
 import os
+import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf, col, monotonically_increasing_id, lit, \
     concat, lower
@@ -358,7 +359,7 @@ def create_times_table(spark, log_df, reg_df, lottery_df, games_df, debug=False)
                   .save()
     return  
 
-def create_registrations_tables(spark, reg_df, debug=False):
+def create_registrations_tables(spark, reg_df, debug=False, **kwargs):
     """Load records to registrations facts tables on Redshift.
 
     Parameters
@@ -370,14 +371,18 @@ def create_registrations_tables(spark, reg_df, debug=False):
     debug: bool
         Flag whether the execution is for production or testing.
     """
-    
-    website_df = spark.read \
-                      .format("com.databricks.spark.redshift") \
-                      .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
-                      .option("aws_region", "us-east-1")\
-                      .option("tempdir", "s3://udac-lottery-data/")\
-                      .option("query", "SELECT * FROM WEBSITES") \
-                      .load()
+    if debug:
+        website_df = kwargs.get('website_df', None)
+        if website_df is None:
+            sys.exit('website_df argument not defined. ETL stopped.')
+    else:
+        website_df = spark.read \
+                          .format("com.databricks.spark.redshift") \
+                          .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
+                          .option("aws_region", "us-east-1")\
+                          .option("tempdir", "s3://udac-lottery-data/")\
+                          .option("query", "SELECT * FROM WEBSITES") \
+                          .load()
     cond = [reg_df.site == website_df.name]
     registrations_table = reg_df.dropDuplicates(["customernumber", "site", "timestamp"])\
                                 .join(website_df, cond, 'leftouter')\
@@ -400,7 +405,7 @@ def create_registrations_tables(spark, reg_df, debug=False):
                   .save()
     return  
 
-def create_logins_table(spark, log_df, debug=False):
+def create_logins_table(spark, log_df, debug=False, **kwargs):
     """Load records to logins facts tables on Redshift.
 
     Parameters
@@ -413,13 +418,18 @@ def create_logins_table(spark, log_df, debug=False):
         Flag whether the execution is for production or testing.
     """
     
-    website_df = spark.read \
-                      .format("com.databricks.spark.redshift") \
-                      .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
-                      .option("aws_region", "us-east-1")\
-                      .option("tempdir", "s3://udac-lottery-data/")\
-                      .option("query", "SELECT * FROM WEBSITES") \
-                      .load()
+    if debug:
+        website_df = kwargs.get('website_df', None)
+        if website_df is None:
+            sys.exit('website_df argument not defined. ETL stopped.')
+    else:
+        website_df = spark.read \
+                          .format("com.databricks.spark.redshift") \
+                          .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
+                          .option("aws_region", "us-east-1")\
+                          .option("tempdir", "s3://udac-lottery-data/")\
+                          .option("query", "SELECT * FROM WEBSITES") \
+                          .load()
     cond = [log_df.site == website_df.name]
     logins_table = log_df.dropDuplicates(["customernumber", "site", "timestamp"])\
                          .join(website_df, cond, 'leftouter')\
@@ -442,7 +452,7 @@ def create_logins_table(spark, log_df, debug=False):
                   .save()
     return
 
-def create_bookings_table(spark, lottery_df, games_df, debug=False):
+def create_bookings_table(spark, lottery_df, games_df, debug=False, **kwargs):
     """Load records to bookings facts tables on Redshift.
 
     Parameters
@@ -456,20 +466,26 @@ def create_bookings_table(spark, lottery_df, games_df, debug=False):
     debug: bool
         Flag whether the execution is for production or testing.
     """
-    website_df = spark.read \
-                      .format("com.databricks.spark.redshift") \
-                      .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
-                      .option("aws_region", "us-east-1")\
-                      .option("tempdir", "s3://udac-lottery-data/")\
-                      .option("query", "SELECT * FROM WEBSITES") \
-                      .load()
-    product_df = spark.read \
-                      .format("com.databricks.spark.redshift") \
-                      .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
-                      .option("aws_region", "us-east-1")\
-                      .option("tempdir", "s3://udac-lottery-data/")\
-                      .option("query", "SELECT * FROM PRODUCTS") \
-                      .load()
+    if debug:
+        website_df = kwargs.get('website_df', None)
+        product_df = kwargs.get('product_df', None)
+        if website_df is None or product_df is None:
+            sys.exit('website_df or product_df argument not defined. ETL stopped.')
+    else:
+        website_df = spark.read \
+                          .format("com.databricks.spark.redshift") \
+                          .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
+                          .option("aws_region", "us-east-1")\
+                          .option("tempdir", "s3://udac-lottery-data/")\
+                          .option("query", "SELECT * FROM WEBSITES") \
+                          .load()
+        product_df = spark.read \
+                          .format("com.databricks.spark.redshift") \
+                          .option("url", f"jdbc:redshift://{DWH_HOST}:{DWH_PORT}/{DWH_DB}?user={DWH_DB_USER}&password={DWH_DB_PASSWORD}") \
+                          .option("aws_region", "us-east-1")\
+                          .option("tempdir", "s3://udac-lottery-data/")\
+                          .option("query", "SELECT * FROM PRODUCTS") \
+                          .load()
 
     lottery_df = lottery_df.dropDuplicates(["ticketid"])\
                            .select(col("ticketid").alias("ticket_id"),
