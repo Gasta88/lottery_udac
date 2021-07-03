@@ -157,7 +157,24 @@ Once the repository is cloned locally, follow these steps:
 9. When the ETL is completed, terminate the AWS EMR cluster via AWS Console.
  
 10. Run the `notebooks/data_visualization.ipynb` to inspect the default queries in the data warehouse.
- 
+
+### Run unittests
+
+To simplify the run for unittest, it is suggested to crete a virtual environment and import the modules specified in the file `requirements.txt`.
+
+1. On console run `python3 -m venv venv`. This will create the virtual environment.
+2. Access the virtual environment via `source venv/bin/activate`
+3. Once the environment is active, run `pip install -r requirements.txt`. This might take some time.
+4. On console run `python -m unittest discover -vvv`. This will automatically run the unittest scripts in verbose mode.
+The results of the tests are displayed in console.
+
+Depending on the data source, the test will check that the ETL performs standard actions like:
+
+- Checking that the dataframe is not empty.
+- Checking that certain mandatory fields do not contain empty values.
+- Checking the number of distinct values for certain fields.
+- Checking the distinct values for certain fields.
+
 ## Files in the repo
 
 Important files in the repository are:
@@ -168,3 +185,7 @@ Important files in the repository are:
 - `imgs`: contains the PNG of the star schema.
 - `aws.cfg`: contains configuration parameters for AWS.
 - `data-dictionary.xlsx`: contains data dictionary from the AWS Redshift database.
+- `tests`: contains test data and test scripts.
+        -   `test_data`: contains samples of data used in the unittest scripts from all the different sources.
+        -   `__init__.py`
+        -   `test_etl.py`: unittest script for `etl.py` script.
